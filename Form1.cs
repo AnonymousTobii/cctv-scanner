@@ -5,6 +5,8 @@ using System.Drawing;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.IO;
+using Newtonsoft.Json;
 
 namespace CCTV_Sentinel
 {
@@ -13,6 +15,7 @@ namespace CCTV_Sentinel
         private CancellationTokenSource? _cts;
         private readonly ScannerEngine _engine;
         private readonly HashSet<string> _reportedIps = new();
+        private readonly List<ScanResult> _scanResults = new();
 
         public Form1()
         {
@@ -41,18 +44,40 @@ namespace CCTV_Sentinel
             dgvResults.Columns.Clear();
 
             dgvResults.Columns.Add("IP", "Target IP");
+            dgvResults.Columns.Add("MAC", "MAC Address");
             dgvResults.Columns.Add("Port", "Port(s)");
+            dgvResults.Columns.Add("DeviceType", "Device Type");
             dgvResults.Columns.Add("Vendor", "Vendor");
             dgvResults.Columns.Add("Status", "Status");
             dgvResults.Columns.Add("Credentials", "Credentials");
+            dgvResults.Columns.Add("ONVIF", "ONVIF Support");
+            dgvResults.Columns.Add("Firmware", "Firmware Version");
 
             dgvResults.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+            
+            // Style configuration
+            dgvResults.DefaultCellStyle.BackColor = Color.FromArgb(30, 30, 30);
+            dgvResults.DefaultCellStyle.ForeColor = Color.White;
+            dgvResults.DefaultCellStyle.SelectionBackColor = Color.FromArgb(50, 50, 50);
+            dgvResults.DefaultCellStyle.SelectionForeColor = Color.LimeGreen;
+            dgvResults.ColumnHeadersDefaultCellStyle.BackColor = Color.FromArgb(40, 40, 40);
+            dgvResults.ColumnHeadersDefaultCellStyle.ForeColor = Color.LimeGreen;
+            dgvResults.ColumnHeadersDefaultCellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            dgvResults.EnableHeadersVisualStyles = false;
+            dgvResults.GridColor = Color.FromArgb(60, 60, 60);
+            dgvResults.BorderStyle = BorderStyle.None;
+            dgvResults.AlternatingRowsDefaultCellStyle.BackColor = Color.FromArgb(35, 35, 35);
         }
 
         private void Form1_Load(object sender, EventArgs e)
         {
             txtSubnet.Text = "192.168.1";
             lblStatus.Text = "Ready";
+            lblProgress.Text = "";
+            
+            // Set up modern UI styling
+            this.BackColor = Color.FromArgb(20, 20, 20);
+            this.ForeColor = Color.White;
         }
 
         // Ensure engine is disposed when the form is closed.
@@ -81,12 +106,14 @@ namespace CCTV_Sentinel
 
             _cts = new CancellationTokenSource();
             _reportedIps.Clear();
+            _scanResults.Clear();
 
             btnStart.Enabled = false;
             btnStop.Enabled = true;
             btnStart.Text = "Scanning...";
             dgvResults.Rows.Clear();
             lblStatus.Text = $"Scanning {txtSubnet.Text}.x...";
+            lblProgress.Text = "Initializing scan...";
 
             int successCount = 0;
             int scannedCount = 0;
@@ -94,6 +121,9 @@ namespace CCTV_Sentinel
             var progress = new Progress<ScanResult>(result =>
             {
                 scannedCount++;
+
+                // Update all results list
+                _scanResults.Add(result);
 
                 // If we've already reported this exact (IP,Port,Credentials) we avoid duplicate rows.
                 // Keep a single row per IP but aggregate ports.
@@ -115,6 +145,18 @@ namespace CCTV_Sentinel
                         if (!string.IsNullOrEmpty(result.Vendor))
                             dgvResults.Rows[r].Cells["Vendor"].Value = result.Vendor;
 
+                        if (!string.IsNullOrEmpty(result.DeviceType))
+                            dgvResults.Rows[r].Cells["DeviceType"].Value = result.DeviceType;
+
+                        if (!string.IsNullOrEmpty(result.MACAddress))
+                            dgvResults.Rows[r].Cells["MAC"].Value = result.MACAddress;
+
+                        if (!string.IsNullOrEmpty(result.ONVIFProfile))
+                            dgvResults.Rows[r].Cells["ONVIF"].Value = result.ONVIFProfile;
+
+                        if (!string.IsNullOrEmpty(result.FirmwareVersion))
+                            dgvResults.Rows[r].Cells["Firmware"].Value = result.FirmwareVersion;
+
                         dgvResults.Rows[r].Cells["Status"].Value = result.Status ?? dgvResults.Rows[r].Cells["Status"].Value;
                         if (!string.IsNullOrEmpty(result.Credentials))
                             dgvResults.Rows[r].Cells["Credentials"].Value = result.Credentials;
@@ -134,36 +176,38 @@ namespace CCTV_Sentinel
                     }
                 }
 
-                if (!updated)
+                if (!updated && result.Success)
                 {
                     int rowIndex = dgvResults.Rows.Add(
                         result.IP,
+                        result.MACAddress,
                         result.Port,
+                        result.DeviceType,
                         result.Vendor,
                         result.Status,
-                        string.IsNullOrEmpty(result.Credentials) ? "N/A" : result.Credentials
+                        string.IsNullOrEmpty(result.Credentials) ? "N/A" : result.Credentials,
+                        result.ONVIFProfile,
+                        result.FirmwareVersion
                     );
 
-                    if (result.Success)
-                    {
-                        dgvResults.Rows[rowIndex].DefaultCellStyle.BackColor = Color.FromArgb(45, 45, 48);
-                        dgvResults.Rows[rowIndex].DefaultCellStyle.ForeColor = Color.LimeGreen;
-                        if (!string.IsNullOrEmpty(result.Credentials))
-                            dgvResults.Rows[rowIndex].Cells["Credentials"].Style.ForeColor = Color.Yellow;
+                    dgvResults.Rows[rowIndex].DefaultCellStyle.BackColor = Color.FromArgb(45, 45, 48);
+                    dgvResults.Rows[rowIndex].DefaultCellStyle.ForeColor = Color.LimeGreen;
+                    if (!string.IsNullOrEmpty(result.Credentials))
+                        dgvResults.Rows[rowIndex].Cells["Credentials"].Style.ForeColor = Color.Yellow;
 
-                        lblStatus.Text = $"Auth Success: {result.IP}";
-                        successCount++;
-                    }
+                    lblStatus.Text = $"Auth Success: {result.IP}";
+                    successCount++;
                 }
 
                 // Simple status update (scan progress is approximate)
-                lblStatus.Text = $"Scanning {txtSubnet.Text}.x... Scanned {scannedCount} hosts, {successCount} successes";
+                lblProgress.Text = $"Scanned: {scannedCount} | Successes: {successCount} | Total Rows: {dgvResults.Rows.Count}";
             });
 
             try
             {
                 await _engine.StartParallelScan(txtSubnet.Text, progress, _cts.Token);
                 lblStatus.Text = $"Scan Complete. {dgvResults.Rows.Count} hosts seen, {successCount} successes.";
+                lblProgress.Text = $"Total scan results: {_scanResults.Count}";
             }
             catch (OperationCanceledException)
             {
@@ -189,6 +233,101 @@ namespace CCTV_Sentinel
             _cts?.Cancel();
             btnStop.Enabled = false;
             lblStatus.Text = "Stopping scan...";
+        }
+
+        private void btnExportJson_Click(object sender, EventArgs e)
+        {
+            if (_scanResults.Count == 0)
+            {
+                MessageBox.Show("No scan results to export.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var saveDialog = new SaveFileDialog
+            {
+                Filter = "JSON Files (*.json)|*.json|All Files (*.*)|*.*",
+                FileName = $"CCTV_Scan_{DateTime.Now:yyyyMMdd_HHmmss}.json",
+                Title = "Export Scan Results as JSON"
+            };
+
+            if (saveDialog.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    var jsonSettings = new JsonSerializerSettings
+                    {
+                        Formatting = Formatting.Indented,
+                        NullValueHandling = NullValueHandling.Ignore
+                    };
+                    
+                    string json = JsonConvert.SerializeObject(_scanResults, jsonSettings);
+                    File.WriteAllText(saveDialog.FileName, json);
+                    MessageBox.Show($"Results exported successfully to:\n{saveDialog.FileName}", 
+                        "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Success);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Export failed: {ex.Message}", "Export Error", 
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void btnExportCsv_Click(object sender, EventArgs e)
+        {
+            if (_scanResults.Count == 0)
+            {
+                MessageBox.Show("No scan results to export.", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            using var saveDialog = new SaveFileDialog
+            {
+                Filter = "CSV Files (*.csv)|*.csv|All Files (*.*)|*.*",
+                FileName = $"CCTV_Scan_{DateTime.Now:yyyyMMdd_HHmmss}.csv",
+                Title = "Export Scan Results as CSV"
+            };
+
+            if (saveDialog.ShowDialog() == DialogResult.OK)
+            {
+                try
+                {
+                    var csvLines = new List<string>();
+                    csvLines.Add("IP,MAC,Port,DeviceType,Vendor,Status,Credentials,ONVIF,Firmware,DiscoveryTime");
+
+                    foreach (var result in _scanResults)
+                    {
+                        string line = $"\"{result.IP}\"," +
+                                     $"\"{result.MACAddress}\"," +
+                                     $"{result.Port}," +
+                                     $"\"{result.DeviceType}\"," +
+                                     $"\"{result.Vendor}\"," +
+                                     $"\"{result.Status}\"," +
+                                     $"\"{result.Credentials}\"," +
+                                     $"\"{result.ONVIFProfile}\"," +
+                                     $"\"{result.FirmwareVersion}\"," +
+                                     $"\"{result.DiscoveryTime:yyyy-MM-dd HH:mm:ss}\"";
+                        csvLines.Add(line);
+                    }
+
+                    File.WriteAllLines(saveDialog.FileName, csvLines);
+                    MessageBox.Show($"Results exported successfully to:\n{saveDialog.FileName}",
+                        "Export Complete", MessageBoxButtons.OK, MessageBoxIcon.Success);
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Export failed: {ex.Message}", "Export Error",
+                        MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+        }
+
+        private void btnClearResults_Click(object sender, EventArgs e)
+        {
+            dgvResults.Rows.Clear();
+            _scanResults.Clear();
+            lblStatus.Text = "Results cleared";
+            lblProgress.Text = "";
         }
     }
 }
