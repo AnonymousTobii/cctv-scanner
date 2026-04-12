@@ -250,9 +250,13 @@
         #endregion
         private Label label1;
         private Label lblStatus;
+        private Label lblProgress;
         private Guna.UI2.WinForms.Guna2BorderlessForm guna2BorderlessForm1;
         private Guna.UI2.WinForms.Guna2Button btnStop;
         private Guna.UI2.WinForms.Guna2Button btnStart;
+        private Guna.UI2.WinForms.Guna2Button btnExportJson;
+        private Guna.UI2.WinForms.Guna2Button btnExportCsv;
+        private Guna.UI2.WinForms.Guna2Button btnClearResults;
         private Guna.UI2.WinForms.Guna2DataGridView dgvResults;
         private Guna.UI2.WinForms.Guna2TextBox txtSubnet;
         private Label label2;

@@ -1,0 +1,36 @@
+```
+# Build artifacts
+*.obj
+*.exe
+*.dll
+*.pdb
+*.user
+*.suo
+*.cache
+*.manifest
+bin/
+obj/
+Debug/
+Release/
+
+# Dependencies
+packages/
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Editors
+.vs/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+```
